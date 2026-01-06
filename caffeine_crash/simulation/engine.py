@@ -1,5 +1,4 @@
 from typing import List
-import math
 from datetime import timedelta
 import random
 from .models import MarketState, Resource, Region, Season
@@ -17,14 +16,14 @@ class MarketEngine:
         for i in range(5):
             agents.append(Farmer(f"Raitha-{i}", Region.MANDYA, Resource.RAGI))
         
-        # Coorg Planters
+        # Coorg Planters - Now producing COMMERCIAL_COFFEE
         for i in range(3):
-            agents.append(Farmer(f"Planter-{i}", Region.COORG, Resource.COFFEE))
+            agents.append(Farmer(f"Planter-{i}", Region.COORG, Resource.COMMERCIAL_COFFEE))
             
         # Bengaluru Techies
         for i in range(5):
             agents.append(Techie(f"Dev-{i}"))
-
+            
         # Darshinis
         for i in range(3):
             agents.append(DarshiniOwner(f"Darshini-{i}"))
@@ -69,15 +68,18 @@ class MarketEngine:
     def update_prices(self):
         headlines = []
         
-        # 1. Update IDLI Price first (Cost-Push Logic)
-        # Cost = 1.5 * RICE + 0.5 * Coffee + 10 (Overhead)
-        # Using Rice price (defaulting to Ragi price proxy if Rice not tracked, but we added Rice to Models)
-        # Actually in models.py RICE is now tracked.
+        # --- 1. RENT SHOCK LOGIC ---
+        # 2% chance of a Rent Hike (Landlord Greed)
+        if random.random() < 0.02:
+            hike = random.choice([100, 200, 500])
+            self.state.rent += hike
+            headlines.append(f"RENT HIKE! Landlords demand ₹{self.state.rent:.0f}/day.")
         
-        cost_basis = (self.state.prices[Resource.RICE] * 1.5) + (self.state.prices[Resource.COFFEE] * 0.1) + 10
-        target_idli_price = cost_basis * 1.2 # 20% Margin
-        
-        # Smooth transition to target price
+        # --- 2. COST-PUSH INFLATION (Idli) ---
+        # Cost = 1.5 * RICE + 0.5 * Commercial_Coffee + 10
+        coffee_cost = self.state.prices[Resource.COMMERCIAL_COFFEE]
+        cost_basis = (self.state.prices[Resource.RICE] * 1.5) + (coffee_cost * 0.1) + 10
+        target_idli_price = cost_basis * 1.2
         current_idli = self.state.prices[Resource.IDLI_SET]
         self.state.prices[Resource.IDLI_SET] = current_idli + (target_idli_price - current_idli) * 0.2
         
@@ -88,56 +90,62 @@ class MarketEngine:
             volatility = 0.02
             change = random.uniform(1 - volatility, 1 + volatility)
             
-            # --- Seasonal & Weather Effects ---
+            # --- Specific Resource Logic ---
             
-            # 1. Flowers: Festival Spike in Post-Monsoon (Dasara/Deepavali)
-            if res == Resource.FLOWERS:
-                seasonal_boost = 0
-                if self.state.season == Season.POST_MONSOON:
-                    seasonal_boost = random.uniform(0.05, 0.15)
+            # ARTISAN COFFEE (The Luxury Index)
+            if res == Resource.ARTISAN_COFFEE:
+                # 1. Cost-Push Factor: Linked to raw bean prices
+                raw_bean_price = self.state.prices[Resource.COMMERCIAL_COFFEE]
+                # If raw beans are expensive (> 260), cafes raise prices
+                if raw_bean_price > 260:
+                    change += 0.01
                 
-                # DEMAND LOGIC: If Techies are broke (Idli is expensive), Demand drops
-                # We simulate this by checking if Idli price > 60
-                if self.state.prices[Resource.IDLI_SET] > 60:
-                    demand_drag = -0.05 
-                    change += demand_drag
-                    if random.random() < 0.1: headlines.append("Flower market slump: 'People spending on food, not flowers'")
+                # 2. Demand Factor: Rent Squeeze
+                # Instead of a crash, demand softens gently
+                if self.state.rent > 3000:
+                    change -= 0.015 # Recessionary drag
+                    if random.random() < 0.1: headlines.append("Cafes reporting lower footfall.")
+                elif self.state.rent > 2500:
+                    change -= 0.005 # Mild slowing
                 else:
-                    change += seasonal_boost
-
-            # 2. Coffee: Drought kills supply -> Price up
-            if res == Resource.COFFEE:
+                    change += 0.005 # Healthy growth
+                
+                # Ensure it doesn't decouple completely from reality
+                if self.state.prices[res] > 500: change -= 0.02 # Ceiling correction
+            
+            # COMMERCIAL COFFEE (Raw Material)
+            if res == Resource.COMMERCIAL_COFFEE:
                 if self.state.weather == "Drought":
-                    change += 0.03
-                    if random.random() < 0.2: headlines.append("Planters worry as drought hits coffee estates.")
-                elif self.state.season == Season.WINTER:
-                    change -= 0.01
+                    change += 0.04
+                    if random.random() < 0.2: headlines.append("Coffee crop failure in Coorg!")
 
-            # 3. Rice & Ragi: Staple food
+            # RICE/RAGI
             if (res == Resource.RAGI or res == Resource.RICE) and self.state.weather == "Drought":
-                change += 0.05 # Stronger effect to force Idli price up
-                if random.random() < 0.2: headlines.append(f"{res.value} prices soar due to lack of rain.")
+                change += 0.05
+                if random.random() < 0.2: headlines.append(f"{res.value} shortage due to drought.")
 
-            # 4. Code: Tech boom/bust cycles
+            # CODE
             if res == Resource.CODE:
+                # Slight upward bias to simulate industry growth
+                change += 0.001
+                
                 if random.random() < 0.05: 
-                    shift = random.choice([-0.1, 0.1])
+                    # Reduced volatility: +/- 5% instead of 10%
+                    shift = random.choice([-0.05, 0.05])
                     change += shift
-                    if shift > 0: headlines.append("Tech Boom! Global startups hiring in Bengaluru.")
-                    else: headlines.append("Recession fears: Tech stocks take a hit.")
 
             self.state.prices[res] *= change
-            
-            # Soft caps
             if self.state.prices[res] < 5: self.state.prices[res] = 5
-            
             self.state.history[res].append(self.state.prices[res])
-            
-        # Add history for Idli too
+        
+        # History for Idli
         self.state.history[Resource.IDLI_SET].append(self.state.prices[Resource.IDLI_SET])
+        
+        # History for Rent
+        self.state.rent_history.append(self.state.rent)
             
         if headlines:
-            self.state.headline = headlines[0] # Show the most impactful news
+            self.state.headline = headlines[0]
 
     def step(self):
         self.state.date += timedelta(days=1)
@@ -145,9 +153,28 @@ class MarketEngine:
         self.update_prices()
         
         daily_logs = []
+        total_techie_cash = 0
+        techie_count = 0
+        
         for agent in self.agents:
             log = agent.act(self.state)
             daily_logs.append(log)
+            if isinstance(agent, Techie):
+                total_techie_cash += agent.cash
+                techie_count += 1
+        
+        # Update Aggregate Stats
+        if techie_count > 0:
+            self.state.avg_techie_cash = total_techie_cash / techie_count
+            
+        # Determine Mood based on savings vs rent
+        savings_ratio = self.state.avg_techie_cash / self.state.rent
+        if savings_ratio < 5:
+            self.state.market_mood = "Panic"
+        elif savings_ratio < 15:
+            self.state.market_mood = "Anxious"
+        else:
+            self.state.market_mood = "Optimistic"
         
         self.logs = daily_logs + self.logs 
         self.logs = self.logs[:50]

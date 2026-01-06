@@ -39,40 +39,37 @@ class Farmer(Agent):
                 self.inventory[Resource.RAGI] = self.inventory.get(Resource.RAGI, 0) + 1
         
         # Sell excess crop
-        to_sell = max(0, self.inventory[self.crop] - 2) # Keep some for seeds/self if applicable
+        to_sell = max(0, self.inventory[self.crop] - 2) 
         if to_sell > 0:
             revenue = to_sell * market_state.prices[self.crop]
             self.cash += revenue
             self.inventory[self.crop] -= to_sell
-            return f"{self.name} harvested {yield_amt} {self.crop.value} and sold {to_sell} for ₹{revenue:.2f}"
+            return f"{self.name} harvested {yield_amt} {self.crop.value}."
             
-        return f"{self.name} harvested {yield_amt} {self.crop.value}"
+        return f"{self.name} harvested {yield_amt} {self.crop.value}."
 
 class DarshiniOwner(Agent):
     def __init__(self, name: str):
-        super().__init__(name, Region.BENGALURU, {Resource.IDLI_SET: 0, Resource.RICE: 10, Resource.COFFEE: 5}, cash=2000.0)
+        super().__init__(name, Region.BENGALURU, {Resource.IDLI_SET: 0, Resource.RICE: 10, Resource.COMMERCIAL_COFFEE: 5}, cash=2000.0)
 
     def act(self, market_state: MarketState) -> str:
-        # Production Recipe: 1 Rice + 0.2 Coffee -> 5 Idli Sets
-        
-        # 1. Buy Raw Materials if low
+        # Production: 1 Rice + 0.2 Coffee -> 5 Idli Sets
         if self.inventory[Resource.RICE] < 5:
             cost = market_state.prices[Resource.RICE] * 10
             if self.cash >= cost:
                 self.cash -= cost
                 self.inventory[Resource.RICE] += 10
         
-        if self.inventory[Resource.COFFEE] < 2:
-            cost = market_state.prices[Resource.COFFEE] * 5
+        if self.inventory[Resource.COMMERCIAL_COFFEE] < 2:
+            cost = market_state.prices[Resource.COMMERCIAL_COFFEE] * 5
             if self.cash >= cost:
                 self.cash -= cost
-                self.inventory[Resource.COFFEE] += 5
+                self.inventory[Resource.COMMERCIAL_COFFEE] += 5
 
-        # 2. Produce
         produced = 0
-        if self.inventory[Resource.RICE] >= 1 and self.inventory[Resource.COFFEE] >= 0.2:
+        if self.inventory[Resource.RICE] >= 1 and self.inventory[Resource.COMMERCIAL_COFFEE] >= 0.2:
             self.inventory[Resource.RICE] -= 1
-            self.inventory[Resource.COFFEE] -= 0.2
+            self.inventory[Resource.COMMERCIAL_COFFEE] -= 0.2
             produced = 5
             self.inventory[Resource.IDLI_SET] += produced
 
@@ -80,14 +77,20 @@ class DarshiniOwner(Agent):
 
 class Techie(Agent):
     def __init__(self, name: str):
-        super().__init__(name, Region.BENGALURU, {Resource.CODE: 0, Resource.IDLI_SET: 0, Resource.FLOWERS: 0}, cash=5000.0)
+        # Starts with 'Safety Net' amount to simulate an established techie
+        super().__init__(name, Region.BENGALURU, {Resource.CODE: 0, Resource.IDLI_SET: 0, Resource.ARTISAN_COFFEE: 0}, cash=40000.0)
+        self.savings_target = 50000.0 # The "Sleep well at night" number
     
     def act(self, market_state: MarketState) -> str:
-        # 1. Work (Earn Salary)
-        salary = 2000 # Daily wage
+        # 1. Earn Salary (Fixed High Income)
+        salary = 3000 
         self.cash += salary
         
-        # 2. SURVIVAL: Buy Idli Set (Breakfast)
+        # 2. PAY RENT (First Priority, Inelastic)
+        rent = market_state.rent
+        self.cash -= rent
+        
+        # 3. SURVIVAL: Buy Idli Set
         idli_price = market_state.prices[Resource.IDLI_SET]
         bought_food = False
         if self.cash >= idli_price:
@@ -95,23 +98,21 @@ class Techie(Agent):
             self.inventory[Resource.IDLI_SET] += 1
             bought_food = True
         
-        # 3. LUXURY: Buy Flowers (Only if rich enough)
-        # The Ripple Effect: If Idli was expensive, they might skip this.
-        flower_price = market_state.prices[Resource.FLOWERS]
-        bought_flowers = 0
+        # 4. LUXURY: Artisan Coffee (The "Good Life" Indicator)
+        # ONLY bought if cash > Savings Target
+        coffee_price = market_state.prices[Resource.ARTISAN_COFFEE]
+        bought_coffee = False
         
-        # Techie feels "Rich" if they have > ₹5000 cash
-        if bought_food and self.cash > 5000: 
-            # Buy flowers for the festival or just decor
-            if self.cash >= flower_price:
-                self.cash -= flower_price
-                self.inventory[Resource.FLOWERS] += 1
-                bought_flowers = 1
+        if bought_food and self.cash > self.savings_target: 
+            if self.cash >= coffee_price:
+                self.cash -= coffee_price
+                self.inventory[Resource.ARTISAN_COFFEE] += 1
+                bought_coffee = True
                 
-        action_log = f"{self.name} ate Idli (₹{idli_price:.0f})."
-        if bought_flowers:
-            action_log += f" Bought Flowers (₹{flower_price:.0f})."
+        action_log = f"{self.name}: Paid Rent ₹{rent:.0f}. Ate Idli."
+        if bought_coffee:
+            action_log += " Sipped Artisan Coffee ☕."
         else:
-            action_log += " Too broke for Flowers!"
+            action_log += " SAVING MODE (No Coffee)."
             
         return action_log
